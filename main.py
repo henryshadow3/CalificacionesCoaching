@@ -1,58 +1,45 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from flask import Flask, request, jsonify, render_template
 import pandas as pd
 
-# Clase para el modelo de solicitud
-class StudentEmail(BaseModel):
-    email: str
+# Inicializar la aplicación Flask
+app = Flask(__name__)
 
-# Carga los datos de Excel
-df = pd.read_excel('calificaciones.xlsx')
-df['Examen(60)'] = pd.to_numeric(df['Examen(60)'], errors='coerce')
+# Cargar los datos de Excel al iniciar la aplicación
+df = pd.read_excel('calificaciones.xlsx', usecols=["Nombre", "Email", "Calificacion"])
+df['Email'] = df['Email'].str.lower()  # Convertir todos los correos a minúsculas para evitar errores de búsqueda
 
-app = FastAPI()
+@app.route("/")
+def index():
+    # Renderizar el template HTML principal
+    return render_template("frontend.html")
 
+@app.route('/get_grade', methods=['POST'])
+def get_grade():
+    try:
+        # Obtener los datos JSON enviados por el cliente
+        data = request.get_json()
+        email = data.get('email')
 
+        if not email:
+            return jsonify({"error": "Falta el campo 'email'."}), 400
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+        email = email.lower()  # Convertir el correo ingresado a minúsculas
 
-app = FastAPI()
+        # Verificar si el correo existe en el DataFrame
+        if email in df['Email'].values:
+            student = df[df['Email'] == email].iloc[0]  # Obtener la fila correspondiente
+            name = student['Nombre']
+            grade = int(student['Calificacion'])  # Convertir explícitamente a int
 
-# Configuración de CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Permite todas las origins (para desarrollo; ajusta en producción)
-    allow_credentials=True,
-    allow_methods=["*"],  # Permite todos los métodos
-    allow_headers=["*"],  # Permite todos los headers
-)
+            return jsonify({
+                "nombre": name,
+                "email": email,
+                "calificación": grade  # Mapeo correcto con el frontend
+            }), 200
+        else:
+            return jsonify({"error": "Correo no encontrado"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-# El resto de tu código de FastAPI...
-
-
-@app.post("/get_grade")
-async def get_grade(student: StudentEmail):
-    # Buscar la calificación por correo electrónico
-    if student.email in df['Correo'].values:
-        examen10 = float(df[df['Correo'] == student.email]['Examen(10pts)'].iloc[0])
-        examen60 = float(df[df['Correo'] == student.email]['Examen(60)'].iloc[0])
-       
-        proyecto = float(df[df['Correo'] == student.email]['Proyecto(30)'].iloc[0])
-        participacion = float(df[df['Correo'] == student.email]['Participación'].iloc[0])
-        calificacion3 =float( df[df['Correo'] == student.email]['Calificación Bloque III'].iloc[0])
-        calificacionf = float(df[df['Correo'] == student.email]['Calificación Final'].iloc[0])
-
-
-
-
-        return {"email": student.email, 
-                "examen 10 pts": examen10,
-                "examen60%": examen60,
-                 "proyecto":proyecto,
-                 "participación":participacion,
-                 "Calificación Bloque 3":calificacion3,
-                 "Calificación Final (tres bloques)": calificacionf}
-    else:
-        raise HTTPException(status_code=404, detail="Correo no encontrado")
-
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
