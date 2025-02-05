@@ -2,25 +2,20 @@ from flask import Flask, request, jsonify, render_template
 import pandas as pd
 from flask_cors import CORS
 
-# Inicializar la aplicación Flask correctamente antes de usar CORS
 app = Flask(__name__)
 CORS(app)
 
-
-# Cargar los datos de todas las hojas del archivo Excel
-excel_file = 'promedios ivan modificados.xlsx'  # Nombre del archivo
+# Cargar el archivo Excel
+excel_file = 'promedios ivan modificados.xlsx'
 sheets = pd.ExcelFile(excel_file)
-dataframes = {sheet: sheets.parse(sheet) for sheet in sheets.sheet_names}
+first_sheet_name = sheets.sheet_names[0]
+df_combined = sheets.parse(first_sheet_name)
 
-# Unificar todos los datos en un solo DataFrame con el nombre del grupo
-df_combined = pd.concat(
-    [df.assign(Grupo=sheet) for sheet, df in dataframes.items()],
-    ignore_index=True
-)
+# Obtener el orden exacto de las columnas desde el archivo
+ordered_columns = list(df_combined.columns)
 
 @app.route("/")
 def index():
-    # Renderizar el template HTML principal
     return render_template("frontend.html")
 
 @app.route('/get_data', methods=['POST'])
@@ -35,13 +30,16 @@ def get_data():
         if password in df_combined['contraseña'].values:
             student = df_combined[df_combined['contraseña'] == password].iloc[0]
 
-            # Guardamos el orden de las columnas
+            # Obtener el orden exacto de las columnas
             column_order = list(df_combined.columns)
 
-            # Diccionario con los datos en el orden correcto
-            student_data = {col: value for col, value in student.items() if pd.notna(value)}
+            # Construir el diccionario de respuesta con el orden correcto
+            student_data = {col: student[col] for col in column_order if pd.notna(student[col])}
 
-            # Agregamos la clave especial para el orden
+            # Agregar el grupo del estudiante
+            student_data["GRUPO"] = student["GRUPO"]
+
+            # Agregar la clave especial con el orden correcto de columnas
             student_data["__column_order"] = column_order
 
             return jsonify(student_data), 200
@@ -49,7 +47,6 @@ def get_data():
             return jsonify({"error": "Contraseña no encontrada"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5002, debug=True)
